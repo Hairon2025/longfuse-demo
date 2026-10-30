@@ -6,9 +6,13 @@ from langfuse_demo.schemas import (
     SearchUpdate,
     Source,
     SummaryUpdate,
+    ClassificationResult,
 )
+from typing import Callable, cast
+from langchain_deepseek import ChatDeepSeek
 
-def classify_question(state: ResearchState) -> ClassificationUpdate:
+
+def create_classify_question_node(model: ChatDeepSeek,) -> Callable[[ResearchState], ClassificationUpdate]:
     """
     对用户问题进行分类，并生成搜索查询词。
 
@@ -17,53 +21,50 @@ def classify_question(state: ResearchState) -> ClassificationUpdate:
         - how_to:          操作步骤类问题
         - troubleshooting: 故障排查类问题
     """
-
-    question: str = state["question"].strip()
-
-    if not question:
-        raise ValueError("问题不能为空。")
-
-
-    # 目前采用简单的关键词匹配方式进行分类，后续可使用 LLM 进行更智能的分类。
-    troubleshooting_keywords: tuple[str, ...] = (
-        "报错",
-        "错误",
-        "失败",
-        "异常",
-        "无法",
-        "不工作",
-        "不行",
-        "不成功",
-        "不启动",
-        "不显示",
+    structured_model = model.with_structured_output(
+        ClassificationResult,
     )
 
-    how_to_keywords: tuple[str, ...] = (
-        "怎么",
-        "如何",
-        "怎样",
-        "步骤",
-        "方法",
-        "操作",
-    )
+    def classify_question(
+        state: ResearchState,
+    ) -> ClassificationUpdate:
+        """使用 LLM 对问题分类，并生成检索查询词。"""
 
-    category: QuestionCategory
+        question: str = state["question"].strip()
+        if not question:
+            raise ValueError("问题不能为空。")
 
-    # 关键字匹配分类逻辑：
-    if any(keyword in question for keyword in troubleshooting_keywords):
-        category = "troubleshooting"
-    elif any(keyword in question for keyword in how_to_keywords):
-        category = "how_to"
-    else:
-        category = "concept"
+        prompt: str = f"""
+请分析下面的用户问题。
 
-    # 生成状态更新
-    update: ClassificationUpdate = {    
-        "category": category,
-        "search_query": question,  # 目前直接使用原问题作为搜索查询词
-    }
+分类规则：
+- concept：询问概念、原理或定义
+- how_to：询问操作步骤或实现方法
+- troubleshooting：出现报错、异常、失败或需要排查问题
 
-    return update
+同时生成一个简洁、适合检索资料的 search_query。
+
+用户问题：
+{question}
+""".strip()
+
+        result: ClassificationResult = cast(
+            ClassificationResult,
+            structured_model.invoke(prompt),
+        )
+
+        search_query: str = result.search_query.strip()
+        if not search_query:
+            raise ValueError("LLM 生成的 search_query 不能为空。")
+
+        update: ClassificationUpdate = {
+            "category": result.category,
+            "search_query": search_query,
+        }
+
+        return update
+
+    return classify_question
 
 def search_documents(state: ResearchState) -> SearchUpdate:
     """

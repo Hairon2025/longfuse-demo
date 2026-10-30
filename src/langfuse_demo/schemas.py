@@ -1,4 +1,5 @@
 from typing import Literal, NotRequired, TypedDict, TypeAlias
+from pydantic import BaseModel, ConfigDict, Field
 
 QuestionCategory: TypeAlias = Literal[
     "concept",
@@ -69,3 +70,17 @@ class SummaryUpdate(TypedDict):
     answer: str
     citations: list[Citation]
 
+class ClassificationResult(BaseModel):
+    """LLM 返回的问题分类结果。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    category: QuestionCategory = Field(
+        description=(
+            "问题类型：concept、how_to 或 troubleshooting。"
+        ),
+    )
+    search_query: str = Field(
+        min_length=1,
+        description="适合用于检索的问题查询词。",
+    )

@@ -1,14 +1,17 @@
+from langchain_deepseek import ChatDeepSeek
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
+from langgraph.graph.state import Callable, CompiledStateGraph
 
 from langfuse_demo.nodes import (
-    classify_question,
+    create_classify_question_node,
     search_documents,
     summarize_answer,
 )
-from langfuse_demo.schemas import ResearchState
+from langfuse_demo.schemas import ClassificationUpdate, ResearchState
 
-def build_graph() -> CompiledStateGraph[
+def build_graph(
+    model: ChatDeepSeek,
+) -> CompiledStateGraph[
     ResearchState,
     None,
     ResearchState,
@@ -22,6 +25,11 @@ def build_graph() -> CompiledStateGraph[
         ResearchState, 
         ResearchState
     ] = StateGraph(ResearchState)
+
+    classify_question: Callable[
+        [ResearchState],
+        ClassificationUpdate,
+    ] = create_classify_question_node(model)
 
     # 添加节点
     builder.add_node("classify_question", classify_question)
