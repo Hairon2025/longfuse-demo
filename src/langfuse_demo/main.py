@@ -45,10 +45,10 @@ def main() -> None:
     }
 
     with trace_run(
-    tags=["langgraph-demo"],
-    metadata={
-        "workflow": "research-workflow",
-        "model": settings.deepseek_model,
+        tags=["langgraph-demo"],
+        metadata={
+            "workflow": "research-workflow",
+            "model": settings.deepseek_model,
     },
     ) as run_config:
         result: ResearchState = graph.invoke(
