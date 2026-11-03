@@ -10,4 +10,5 @@ def create_chat_model(settings: Settings) -> ChatDeepSeek:
         api_key=settings.deepseek_api_key,
         model=settings.deepseek_model,
         temperature=0,
+        extra_body={"thinking": {"type": "disabled"}},
     )

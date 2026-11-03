@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, TypeAlias
+
 from pydantic import BaseModel, ConfigDict, Field
 
 QuestionCategory: TypeAlias = Literal[
@@ -7,17 +9,21 @@ QuestionCategory: TypeAlias = Literal[
     "troubleshooting",
 ]
 
+
 class Source(TypedDict):
     """单条检索来源。"""
-    title: str      # 来源标题
-    url: str        # 来源链接
-    content: str    # 与问题相关的摘要片段
+
+    title: str  # 来源标题
+    url: str  # 来源链接
+    content: str  # 与问题相关的摘要片段
+
 
 class Citation(TypedDict):
     """回答中使用的一条引用。"""
 
-    url: str        # 引用对应的来源链接
-    quote: str      # 从来源内容中引用的原文片段
+    url: str  # 引用对应的来源链接
+    quote: str  # 从来源内容中引用的原文片段
+
 
 class ResearchState(TypedDict):
     """
@@ -59,10 +65,12 @@ class ClassificationUpdate(TypedDict):
     category: QuestionCategory
     search_query: str
 
+
 class SearchUpdate(TypedDict):
     """search_documents 节点产生的状态更新。"""
 
     sources: list[Source]
+
 
 class SummaryUpdate(TypedDict):
     """summarize_answer 节点产生的状态更新。"""
@@ -70,17 +78,52 @@ class SummaryUpdate(TypedDict):
     answer: str
     citations: list[Citation]
 
+
 class ClassificationResult(BaseModel):
     """LLM 返回的问题分类结果。"""
 
     model_config = ConfigDict(extra="forbid")
 
     category: QuestionCategory = Field(
-        description=(
-            "问题类型：concept、how_to 或 troubleshooting。"
-        ),
+        description=("问题类型：concept、how_to 或 troubleshooting。"),
     )
     search_query: str = Field(
         min_length=1,
         description="适合用于检索的问题查询词。",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerGenerationInput:
+    """答案生成 Agent 的输入。"""
+
+    question: str
+    category: QuestionCategory
+    sources: list[Source]
+
+
+class GeneratedCitation(BaseModel):
+    """LLM 生成的一条引用。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, description="引用来源的 URL。")
+    quote: str = Field(
+        min_length=1,
+        description="从来源中逐字引用的原文。",
+    )
+
+
+class AnswerGenerationResult(BaseModel):
+    """LLM 生成的最终回答。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(
+        min_length=1,
+        description="基于检索来源生成的回答。",
+    )
+    citations: list[GeneratedCitation] = Field(
+        min_length=1,
+        description="回答使用的来源引用。",
     )

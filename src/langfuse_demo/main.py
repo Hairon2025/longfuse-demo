@@ -1,9 +1,19 @@
+from langchain_deepseek import ChatDeepSeek
+from langgraph.graph.state import CompiledStateGraph
+
+from langfuse_demo.config import Settings, load_settings
 from langfuse_demo.graph import build_graph
+from langfuse_demo.llm.answer_generator import AnswerGeneratorAgent
+from langfuse_demo.llm.clients import create_chat_model
+from langfuse_demo.llm.components import LLMComponents
+from langfuse_demo.llm.question_classifier import (
+    QuestionClassifierAgent,
+)
 from langfuse_demo.schemas import Citation, ResearchState
 
 
 def main() -> None:
-    """运行命令行版研究工作流（Demo）"""
+    """运行命令行版研究工作流。"""
 
     question: str = input("请输入问题：").strip()
 
@@ -11,19 +21,48 @@ def main() -> None:
         print("问题不能为空")
         return
 
-    graph = build_graph()
+    settings: Settings = load_settings()
 
-    initial_state: ResearchState = { "question": question,}
+    model: ChatDeepSeek = create_chat_model(settings)
 
-    result: ResearchState = graph.invoke(initial_state)
+    classifier: QuestionClassifierAgent = QuestionClassifierAgent(model)
+    answer_generator: AnswerGeneratorAgent = AnswerGeneratorAgent(model)
+
+    llm_components: LLMComponents = LLMComponents(
+        classifier=classifier,
+        answer_generator=answer_generator,
+    )
+
+    graph: CompiledStateGraph[
+        ResearchState,
+        None,
+        ResearchState,
+        ResearchState,
+    ] = build_graph(llm_components)
+
+    initial_state: ResearchState = {
+        "question": question,
+    }
+
+    result: ResearchState = graph.invoke(
+        initial_state,
+    )
 
     answer: str | None = result.get("answer")
-    citations: list[Citation] | None = result.get("citations")
-
+    citations: list[Citation] | None = result.get(
+        "citations",
+    )
 
     if answer is None or citations is None:
-        raise RuntimeError("工作流执行完成，但没有生成回答或引用。")
+        raise RuntimeError(
+            "工作流执行完成，但没有生成回答或引用。",
+        )
 
+    print("\n分类：")
+    print(result.get("category"))
+
+    print("\n检索词：")
+    print(result.get("search_query"))
 
     print("\n回答：")
     print(answer)

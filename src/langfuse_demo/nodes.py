@@ -1,70 +1,99 @@
+from typing import Callable
+
+from langfuse_demo.llm.base import BaseAgent
 from langfuse_demo.schemas import (
+    AnswerGenerationInput,
+    AnswerGenerationResult,
     Citation,
+    ClassificationResult,
     ClassificationUpdate,
     QuestionCategory,
     ResearchState,
     SearchUpdate,
     Source,
     SummaryUpdate,
-    ClassificationResult,
 )
-from typing import Callable, cast
-from langchain_deepseek import ChatDeepSeek
 
 
-def create_classify_question_node(model: ChatDeepSeek,) -> Callable[[ResearchState], ClassificationUpdate]:
+def create_classify_question_node(
+    classifier: BaseAgent[str, ClassificationResult],
+) -> Callable[[ResearchState], ClassificationUpdate]:
     """
-    对用户问题进行分类，并生成搜索查询词。
+    创建问题分类节点
 
     分类结果：
         - concept:         概念解释类问题
         - how_to:          操作步骤类问题
         - troubleshooting: 故障排查类问题
     """
-    structured_model = model.with_structured_output(
-        ClassificationResult,
-    )
 
     def classify_question(
         state: ResearchState,
     ) -> ClassificationUpdate:
-        """使用 LLM 对问题分类，并生成检索查询词。"""
+        """读取 State，调用分类 Agent，返回状态更新。"""
 
         question: str = state["question"].strip()
         if not question:
             raise ValueError("问题不能为空。")
 
-        prompt: str = f"""
-请分析下面的用户问题。
-
-分类规则：
-- concept：询问概念、原理或定义
-- how_to：询问操作步骤或实现方法
-- troubleshooting：出现报错、异常、失败或需要排查问题
-
-同时生成一个简洁、适合检索资料的 search_query。
-
-用户问题：
-{question}
-""".strip()
-
-        result: ClassificationResult = cast(
-            ClassificationResult,
-            structured_model.invoke(prompt),
-        )
-
-        search_query: str = result.search_query.strip()
-        if not search_query:
-            raise ValueError("LLM 生成的 search_query 不能为空。")
+        result: ClassificationResult = classifier.invoke(question)
 
         update: ClassificationUpdate = {
             "category": result.category,
-            "search_query": search_query,
+            "search_query": result.search_query,
         }
 
         return update
 
     return classify_question
+
+
+def create_summarize_answer_node(
+    answer_generator: BaseAgent[
+        AnswerGenerationInput,
+        AnswerGenerationResult,
+    ],
+) -> Callable[[ResearchState], SummaryUpdate]:
+    """创建答案生成节点。"""
+
+    def summarize_answer(
+        state: ResearchState,
+    ) -> SummaryUpdate:
+        """读取 State，调用生成 Agent，返回回答和引用。"""
+
+        question: str = state["question"].strip()
+        category: QuestionCategory | None = state.get("category")
+        sources: list[Source] | None = state.get("sources")
+
+        if not question:
+            raise ValueError("问题不能为空。")
+        if category is None:
+            raise ValueError("category 不存在，无法生成回答。")
+        if not sources:
+            raise ValueError("sources 不存在，无法生成回答。")
+
+        agent_input: AnswerGenerationInput = AnswerGenerationInput(
+            question=question,
+            category=category,
+            sources=sources,
+        )
+        result: AnswerGenerationResult = answer_generator.invoke(agent_input)
+
+        citations: list[Citation] = [
+            {
+                "url": citation.url,
+                "quote": citation.quote,
+            }
+            for citation in result.citations
+        ]
+        update: SummaryUpdate = {
+            "answer": result.answer,
+            "citations": citations,
+        }
+        return update
+
+    return summarize_answer
+
 
 def search_documents(state: ResearchState) -> SearchUpdate:
     """
@@ -97,48 +126,20 @@ def search_documents(state: ResearchState) -> SearchUpdate:
                 "只需要返回自己负责更新的字段。"
             ),
         },
+        {
+            "title": "LangGraph Workflow",
+            "url": "local://langgraph-workflow",
+            "content": (
+                "创建 LangGraph 工作流时，先定义 State 和节点函数，"
+                "再使用 StateGraph 注册节点并连接边，最后调用 compile() "
+                "得到可执行工作流。"
+            ),
+        },
     ]
 
     # 生成状态更新
     update: SearchUpdate = {
         "sources": sources,
-    }
-
-    return update
-
-def summarize_answer(state: ResearchState) -> SummaryUpdate:
-    """根据检索来源生成固定规则的回答和引用。"""
-
-    question: str = state["question"].strip()
-    sources: list[Source] | None = state.get("sources")
-
-    if not question:
-        raise ValueError("问题不能为空。")
-
-    if not sources:
-        raise ValueError("sources 不存在，无法生成回答。")
-
-    source_contents: list[str] = [
-        source["content"]
-        for source in sources
-    ]
-
-    answer: str = (
-        f"针对问题“{question}”，检索资料表明："
-        f"{''.join(source_contents)}"
-    )
-
-    citations: list[Citation] = [
-        {
-            "url": source["url"],
-            "quote": source["content"],
-        }
-        for source in sources
-    ]
-
-    update: SummaryUpdate = {
-        "answer": answer,
-        "citations": citations,
     }
 
     return update
