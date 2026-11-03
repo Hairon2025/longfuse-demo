@@ -10,7 +10,7 @@ from langfuse_demo.llm.question_classifier import (
     QuestionClassifierAgent,
 )
 from langfuse_demo.schemas import Citation, ResearchState
-
+from langfuse_demo.observability import trace_run
 
 def main() -> None:
     """运行命令行版研究工作流。"""
@@ -44,9 +44,17 @@ def main() -> None:
         "question": question,
     }
 
-    result: ResearchState = graph.invoke(
-        initial_state,
-    )
+    with trace_run(
+    tags=["langgraph-demo"],
+    metadata={
+        "workflow": "research-workflow",
+        "model": settings.deepseek_model,
+    },
+    ) as run_config:
+        result: ResearchState = graph.invoke(
+            initial_state,
+            config=run_config,
+        )
 
     answer: str | None = result.get("answer")
     citations: list[Citation] | None = result.get(
